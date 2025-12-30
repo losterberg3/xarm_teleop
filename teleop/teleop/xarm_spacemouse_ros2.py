@@ -148,7 +148,7 @@ class Spacemouse2Xarm(Node):
                 speed=100, is_radian=False, wait=True
             )
         self.arm.motion_enable(enable=True)
-        self.arm.set_mode(1) # Servo control mode
+        self.arm.set_mode(0) 
         self.arm.set_state(0)
         self.is_resetting = False
 
@@ -162,8 +162,9 @@ class Spacemouse2Xarm(Node):
         self.arm.set_gripper_enable(enable=True)
         self.arm.set_gripper_mode(0)
         self.arm.set_state(0)
-        cmd_joint_pose = [-0.8, -85.2, -2.6, 1.6, 37.5, 179.4] 
+        cmd_joint_pose = [0.0, -81.3, -26.5, 0.0, 58.0, 180.0] 
         cmd_gripper_pose = 850.0
+        print("going home")
         self.arm.set_servo_angle(servo_id=8, angle=cmd_joint_pose, is_radian=False, wait=True) 
         self.arm.set_gripper_position(cmd_gripper_pose, wait=True)
         self.arm.motion_enable(enable=True)
@@ -191,11 +192,13 @@ class Spacemouse2Xarm(Node):
         # Left Button => "start_demo" on rising edge
         if left_button and not self.prev_left_button:
             START_FLAG.touch()
+            print("left button pressed, starting demo")
 
 
         # Right Button => "end_demo" on rising edge
         if right_button and not self.prev_right_button:
             STOP_FLAG.touch()
+            print("right button pressed, ending demo")
             # Start tracking how long it's held
             self.right_button_pressed = True
             self.right_button_press_time = time.time()
@@ -217,7 +220,7 @@ class Spacemouse2Xarm(Node):
             press_duration = time.time() - self.right_button_press_time
             # If we cross the threshold and haven't gone home yet, do it
             if (press_duration >= self.long_press_threshold) and (not self.go_home_done_for_press):
-                self.go_home()
+                self.go_home_joints()
                 self.go_home_done_for_press = True
 
 
