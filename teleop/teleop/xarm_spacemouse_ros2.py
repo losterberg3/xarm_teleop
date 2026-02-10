@@ -95,12 +95,24 @@ class Spacemouse2Xarm(Node):
         self.slider.set(0)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.gripper_position = 0.0
+
+        self.key_step = 0.05
+        self.root.focus_force()
+        self.root.bind("<Left>", self.on_left_key)
+        self.root.bind("<Right>", self.on_right_key)
         self.root.update()
 
         self.dt = 1.0/30.0
         # --- Timer for ~60 Hz loop ---
         self.timer = self.create_timer(self.dt, self.timer_callback)
 
+    def on_left_key(self, event=None):
+        val = self.slider.get()
+        self.slider.set(max(0.0, val - self.key_step))
+
+    def on_right_key(self, event=None):
+        val = self.slider.get()
+        self.slider.set(min(1.0, val + self.key_step))
 
     def update_gripper(self, value):
         self.gripper_position = float(value)
@@ -241,7 +253,7 @@ class Spacemouse2Xarm(Node):
 
         # 2) Get cartesian input from the SpaceMouse
         scale_linear = 140.0
-        scale_angular = 20.0
+        scale_angular = 40.0
         vx, vy, vz, wx, wy, wz = self.latest_axes * np.array([scale_linear]*3 + [scale_angular]*3)
 
         # 3) Compute new pose
