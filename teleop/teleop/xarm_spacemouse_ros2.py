@@ -96,23 +96,27 @@ class Spacemouse2Xarm(Node):
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.gripper_position = 0.0
 
-        self.key_step = 0.05
+        self.key_step = 0.04
         self.root.focus_force()
         self.root.bind("<Left>", self.on_left_key)
         self.root.bind("<Right>", self.on_right_key)
         self.root.update()
+
+        self.auto_closing = False
+        self.auto_open = False
+        self.gripper_target = 0.0
 
         self.dt = 1.0/30.0
         # --- Timer for ~60 Hz loop ---
         self.timer = self.create_timer(self.dt, self.timer_callback)
 
     def on_left_key(self, event=None):
-        val = self.slider.get()
-        self.slider.set(max(0.0, val - self.key_step))
+        self.gripper_target = 0.0
+        self.auto_open = True
 
     def on_right_key(self, event=None):
-        val = self.slider.get()
-        self.slider.set(min(1.0, val + self.key_step))
+        self.gripper_target = 0.54
+        self.auto_closing = True
 
     def update_gripper(self, value):
         self.gripper_position = float(value)
@@ -189,6 +193,24 @@ class Spacemouse2Xarm(Node):
         Main 60 Hz update: reads SpaceMouse, publishes robot control messages,
         optionally commands xArm, etc.
         """
+
+        if self.auto_closing:
+            current_val = self.slider.get()
+            if current_val < self.gripper_target:
+                new_val = min(self.gripper_target, current_val + 0.02)
+                self.slider.set(new_val)
+                self.update_gripper(new_val)
+            else:
+                self.auto_closing = False
+
+        if self.auto_open:
+            current_val = self.slider.get()
+            if current_val > self.gripper_target:
+                new_val = max(self.gripper_target, current_val - 0.02)
+                self.slider.set(new_val)
+                self.update_gripper(new_val)
+            else:
+                self.auto_open = False
        
         if self.latest_msg is None:
             return  # If no joystick message has been received yet, skip this update
