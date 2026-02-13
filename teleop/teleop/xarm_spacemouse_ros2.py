@@ -164,7 +164,7 @@ class Spacemouse2Xarm(Node):
                 speed=100, is_radian=False, wait=True
             )
         self.arm.motion_enable(enable=True)
-        self.arm.set_mode(0) 
+        self.arm.set_mode(1) 
         self.arm.set_state(0)
         self.is_resetting = False
 
@@ -184,7 +184,7 @@ class Spacemouse2Xarm(Node):
         self.arm.set_servo_angle(servo_id=8, angle=cmd_joint_pose, is_radian=False, wait=True) 
         self.arm.set_gripper_position(cmd_gripper_pose, wait=True)
         self.arm.motion_enable(enable=True)
-        self.arm.set_mode(1) # Servo control mode
+        self.arm.set_mode(1)
         self.arm.set_state(0)
         self.is_resetting = False
 
@@ -317,7 +317,7 @@ class Spacemouse2Xarm(Node):
 
         # 8) Command the xArm
         self.arm.set_servo_cartesian(new_pose, speed=300, mvacc=2000)
-        self.arm.set_gripper_position(grasp)
+        #self.arm.set_gripper_position(grasp)
 
         # Final step: update GUI & remember button states
         self.root.update()
