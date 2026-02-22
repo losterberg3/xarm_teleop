@@ -9,26 +9,25 @@ import time  # For measuring press durations
 from sensor_msgs.msg import Joy #added this
 from std_msgs.msg import Bool, Float32
 from geometry_msgs.msg import TwistStamped, PoseStamped
-#from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation # will need to use compatible version of numpy 
 
 from pathlib import Path
 
 START_FLAG = Path("/tmp/start_demo")
 STOP_FLAG  = Path("/tmp/stop_demo")
 
-#def euler_to_quaternion(roll, pitch, yaw):
-   # Assuming degrees for the xArm, as in your original code
-   #rot = Rotation.from_euler('xyz', [roll, pitch, yaw], degrees=True)
-   #quat = rot.as_quat()
-   # print(quat)
-   #return quat
+def euler_to_quaternion(roll, pitch, yaw):
+    # Assuming degrees for the xArm, as in your original code
+    rot = Rotation.from_euler('xyz', [roll, pitch, yaw], degrees=True)
+    quat = rot.as_quat()
+    print(quat)
+    return quat
 
 
 class Spacemouse2Xarm(Node):
     def __init__(self):
         super().__init__('spacemouse2xarm')
         ip = self.declare_parameter('xarm_ip', '192.168.1.219').value
-
 
         # --- XArm setup ---
         self.arm = XArmAPI(ip)
@@ -72,8 +71,7 @@ class Spacemouse2Xarm(Node):
         self.reset_sub = self.create_subscription(Bool, 'reset_xarm', self.reset_callback, 10)
         self.is_resetting = False
 
-
-        # --- GUI for the gripper slider (UPDATED with larger size) ---
+        # --- GUI for the gripper slider ---
         self.root = tk.Tk()
         self.root.title("Gripper Control")
         self.root.geometry("1500x300")  # Larger window
@@ -107,7 +105,6 @@ class Spacemouse2Xarm(Node):
         self.gripper_target = 0.0
 
         self.dt = 1.0/30.0
-        # --- Timer for ~60 Hz loop ---
         self.timer = self.create_timer(self.dt, self.timer_callback)
 
     def on_left_key(self, event=None):
@@ -115,7 +112,7 @@ class Spacemouse2Xarm(Node):
         self.auto_open = True
 
     def on_right_key(self, event=None):
-        self.gripper_target = 0.54
+        self.gripper_target = 0.79
         self.auto_closing = True
 
     def update_gripper(self, value):
@@ -126,7 +123,6 @@ class Spacemouse2Xarm(Node):
         """
         Called externally via the "reset_xarm" topic.
         """
-        # let's try to modify the reset position and focus only on grasping the object.
         if msg.data:
             self.is_resetting = True
             self.arm.motion_enable(enable=True)
@@ -178,9 +174,8 @@ class Spacemouse2Xarm(Node):
         self.arm.set_gripper_enable(enable=True)
         self.arm.set_gripper_mode(0)
         self.arm.set_state(0)
-        cmd_joint_pose = [0.0, -81.3, -26.5, 0.0, 58.0, 180.0] 
+        cmd_joint_pose = [0.0, -90.4, -24.0, 0.0, 61.3, 180.0] 
         cmd_gripper_pose = 850.0
-        print("going home")
         self.arm.set_servo_angle(servo_id=8, angle=cmd_joint_pose, is_radian=False, wait=True) 
         self.arm.set_gripper_position(cmd_gripper_pose, wait=True)
         self.arm.motion_enable(enable=True)
@@ -219,18 +214,20 @@ class Spacemouse2Xarm(Node):
         left_button = bool(self.latest_msg.buttons[0])
         right_button = bool(self.latest_msg.buttons[1])
 
-
         # =============================
         #   BUTTON EDGE DETECTIONS
         # =============================
         # Left Button => "start_demo" on rising edge
         if left_button and not self.prev_left_button:
+            if STOP_FLAG.exists():
+                STOP_FLAG.unlink()
             START_FLAG.touch()
             print("left button pressed, starting demo")
 
-
         # Right Button => "end_demo" on rising edge
         if right_button and not self.prev_right_button:
+            if START_FLAG.exists():
+                START_FLAG.unlink()
             STOP_FLAG.touch()
             print("right button pressed, ending demo")
             # Start tracking how long it's held
@@ -238,17 +235,13 @@ class Spacemouse2Xarm(Node):
             self.right_button_press_time = time.time()
             self.go_home_done_for_press = False
 
-
         # Right Button => falling edge => reset the press flags
         if not right_button and self.prev_right_button:
             self.right_button_pressed = False
             self.right_button_press_time = None
             self.go_home_done_for_press = False
 
-
-        # ===========================
-        #   LONG-PRESS DETECTION
-        # ===========================
+        # long-press detection
         if self.right_button_pressed and right_button:
             # It's still held; check duration
             press_duration = time.time() - self.right_button_press_time
@@ -257,10 +250,6 @@ class Spacemouse2Xarm(Node):
                 self.go_home_joints()
                 self.go_home_done_for_press = True
 
-
-        # ======================
-        #  Robot Control Loop
-        # ======================
         # Skip normal cartesian control if we are actively resetting
         if self.is_resetting:
             self.root.update()
@@ -268,19 +257,33 @@ class Spacemouse2Xarm(Node):
             self.prev_right_button = right_button
             return
 
-
         # 1) Get current xArm pose
         curr_pose = self.arm.get_position()[1]
         curr_pose = np.array(curr_pose)
+        curr_euler = curr_pose[3:] 
+        curr_quat = Rotation.from_euler('xyz', curr_euler, degrees=True)
 
         # 2) Get cartesian input from the SpaceMouse
         scale_linear = 140.0
         scale_angular = 40.0
         vx, vy, vz, wx, wy, wz = self.latest_axes * np.array([scale_linear]*3 + [scale_angular]*3)
 
-        # 3) Compute new pose
-        new_pose = curr_pose + (np.array([vx, vy, vz, -wx, -wy, wz]) * self.dt)
+        # 3. Calculate the rotation delta from SpaceMouse (in radians)
+        # angular_velocity * dt
+        delta_euler = np.array([wx, wy, wz]) * self.dt * (np.pi / 180.0)
+        delta_quat = Rotation.from_rotvec(delta_euler)
+             
+        # 4. Apply the delta (Matrix multiplication handles the rotation)
+        new_quat = delta_quat * curr_quat
+        new_euler = new_quat.as_euler('xyz', degrees=True)
 
+        new_xyz = curr_pose[:3] + np.array([vx, vy, vz]) * self.dt
+
+        # 5. Combine with new XYZ positions
+        new_pose = np.concatenate([new_xyz, new_euler])
+        
+        # 3) Compute new pose
+        #new_pose = curr_pose + (np.array([vx, vy, vz, -wx, -wy, wz]) * self.dt)
 
         # 4) Publish PoseStamped, note these are not what actually commands the robot
         pose_msg = PoseStamped()
@@ -307,17 +310,15 @@ class Spacemouse2Xarm(Node):
         twist_msg.twist.angular.z = wz
         self.action_pub.publish(twist_msg)
 
-
         # 6) Convert the slider [0..1] to a gripper command (0 => 850, 1 => -10)
         grasp = 850 - 860 * self.gripper_position
-
 
         # 7) Publish the gripper [0..1]
         self.gripper_pub.publish(Float32(data=self.gripper_position))
 
         # 8) Command the xArm
         self.arm.set_servo_cartesian(new_pose, speed=300, mvacc=2000)
-        #self.arm.set_gripper_position(grasp)
+        self.arm.set_gripper_position(grasp)
 
         # Final step: update GUI & remember button states
         self.root.update()
